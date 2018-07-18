@@ -1,0 +1,29 @@
+---
+title: "Kmer_analysis"
+author: "Artem Mikelov"
+date: "7/18/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+```
+
+## Simple example
+
+```{r}
+source("/raid/users/Artem/tools/kmer/kmer_full_withV.R")
+target = "/raid/users/Artem/tools/vdj_kmer/test/Mikh_SF_8.txt"
+db = "/raid/users/Artem/tools/vdj_kmer/test/Mikh_PB_8.txt"
+
+Mikh_kmers<-count_kmers(target = target, db = db,with.gaps = F)
+data.sf<-fread(target)
+data.pb<-fread(db)
+
+
+ggplot(Mikh_kmers,aes(x=log2fc,y=minus_log10p,color=count.target,size=count.target))+geom_point()
+
+
+
+```

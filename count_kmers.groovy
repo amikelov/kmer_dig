@@ -1,10 +1,44 @@
+def cli = new CliBuilder(usage:'kmer_dig [options] message')
 
-def inputFileName = args[0]
-def Vtable = args[1]
-def discont = args[2].toBoolean()
-def useFreq = args[3].toBoolean()
+cli._(longOpt:'inputFileName', args:1, argName:'inputFileName', 'repertoire file, with columns referring to aaSeqCDR3, Vgene, cloneFraction')
+cli.v(longOpt: 'Vtable', args:1, argName:'v','table with V genes, optional')
+cli.d(longOpt: 'discont', args:1, argName: 'd','do we count discontinious k-mers, default = false')
+cli.f(longOpt: 'useFreq',args:1, argName:'f' ,'do we use clone frequencies or clone numbers, default = false')
+cli.l(longOpt: 'cutLeft',args:1, argName: 'l', 'number of amino acids to cut from the left side of CDR3, default = 3')
+cli.r(longOpt: 'cutRight',args:1, argName: 'r' ,'number of amino acids to cut from the right side of CDR3,default = 3')
+cli.lmax(longOpt: 'kmerLengthMax',args:1, argName: 'lmax','max length of the k-mer, default = 3')
+cli.lmin(longOpt: 'kmerLengthMin',args:1, argName: 'lmin','min length of the k-mer, default = 3')
 
-assert args.length == 4
+cli.h('print this message')
+
+def options = cli.parse(args)
+
+if (options.h){
+	cli.usage()
+	System.exit(0)
+} else {
+
+def inputFileName = options.arguments()[0]
+def Vtable = options.v
+def discont = options.d.toBoolean()
+def useFreq = options.f.toBoolean()
+def cutLeft = options.l ? options.l.toInteger() : 3    // ternary operator (if) to set default of cutLeft to3
+def cutRight = options.r ? options.r.toInteger(): 3    // elvis operator (if) to set default of cutRight to 3
+def lmax = options.lmax ? options.lmax.toInteger() : 4    // elvis operator (if) to set default of max k-mer length to 4
+def lmin = options.lmin ? options.lmin.toInteger() : 3    // elvis operator (if) to set default of max k-mer length to 4
+
+if (lmin<3) System.err << "\nwarning! min k-mer length is too short (less than 3). results for such short k-mers may be doubtful\n"
+
+//println("vtable " +Vtable)
+//println("disc "+ discont)
+//println("freq " + useFreq)
+//println("left " + cutLeft)
+//println(cutRight)
+//println(lmax)
+//println(lmin)
+//println("filename " + inputFileName)
+
+
 
 def firstLine = true
 
@@ -12,8 +46,9 @@ def firstLine = true
 
 def Vref = [:]
 new File(Vtable).splitEachLine(":") {v ->
-	Vref.put(v[0],v[1].split(","))
+	Vref.put(v[0],v[1].split(",").sort())
 }
+
 
 def freq
 def kmerMap=[:].withDefault{[:].withDefault{0}}
@@ -32,20 +67,20 @@ new File(inputFileName).splitEachLine("\t") {seq ->
 	
 	//find all needed columns
 
-	aaCDR3Col=seq.findIndexOf{it in ["aaSeqCDR3","CDR3aa"]}
+	aaCDR3Col=seq.findIndexOf{it in ["aaSeqCDR3","CDR3aa", "CDR3.amino.acid.sequence"]}
 	if(aaCDR3Col==-1) {
 		System.err << "Could not find column with aa CDR3 sequences - no column named aaSeqCDR3 or CDR3aa\n"
 		System.exit(0)
 	}
 
-	VCol=seq.findIndexOf{it in ["bestVGene","V"]}
+	VCol=seq.findIndexOf{it in ["bestVGene","V", "V.gene"]}
         if(VCol==-1) {
                 System.err << "Could not find column with V gene annotation - no column named bestVGene or V\n"
                 System.exit(0)
         }
 
 	if (useFreq) {
-		freqCol=seq.findIndexOf{it in ["cloneFraction","frequency"]}
+		freqCol=seq.findIndexOf{it in ["cloneFraction","frequency", "Read.proportion"]}
 		 if(freqCol==-1) {
 			System.err << "Could not find column with V gene annotation - no column named cloneFraction or frequency\n"
 			System.exit(0)
@@ -63,11 +98,11 @@ new File(inputFileName).splitEachLine("\t") {seq ->
 	}
 
 	
-	if(seq[aaCDR3Col].length() > 7) {
-		seq[aaCDR3Col]=seq[aaCDR3Col].substring(3,seq[aaCDR3Col].length()-3);
+	if(seq[aaCDR3Col].length() > cutLeft+cutRight+1) {
+		seq[aaCDR3Col]=seq[aaCDR3Col].substring(cutLeft,seq[aaCDR3Col].length()-cutRight);
 
 		V = seq[VCol].split(",");
-		for (k=3;k<5;k++){
+		for (k=lmin;k<=lmax;k++){
 			currentKmers =[]
 			for (i=0;i<seq[aaCDR3Col].length()-k+1;i++){
 				kmer = seq[aaCDR3Col].substring(i,i+k);
@@ -77,12 +112,21 @@ new File(inputFileName).splitEachLine("\t") {seq ->
 				if (useFreq) {freq = Double.parseDouble(seq[freqCol])
 					} else { freq = 1}
 				V.each{v->
-					Vref.get(v).each {entry ->		
-						if (Vmap.containsKey((entry))) {
-							kmerMap.get(kmer) << [(entry) : (Vmap.get((entry)) + 1*freq)]
+						if (Vtable != false){
+							if (Vmap.containsKey((v))) {
+                                                                kmerMap.get(kmer) << [(Vref.get(v).join('/')) : (Vmap.get((v)) + 1*freq)]
+                                                        } else {
+                                                                kmerMap.get(kmer)<< [(Vref.get(v).join('/')) :1*freq]
+                                                        }
+
 						} else {
-							kmerMap.get(kmer)<< [(entry):1*freq]
-						}
+								
+							if (Vmap.containsKey((v))) {
+								kmerMap.get(kmer) << [(v) : (Vmap.get((v)) + 1*freq)]
+							} else {
+								kmerMap.get(kmer)<< [(v):1*freq]
+							}
+						
 					}
 				}
 			}
@@ -130,3 +174,4 @@ kmerMap.each{k,v ->
 	}
 }
 log.flush()
+}
